@@ -87,6 +87,8 @@ def service_status_check():
     return JSONResponse(content=response_content, status_code=status.HTTP_200_OK)
 
 
+# TODO: Import the routers here
+
 if __name__ == "__main__":
     should_reload = settings.CONF_ENV == Environments.DEV
     port = settings.SERVER_PORT
