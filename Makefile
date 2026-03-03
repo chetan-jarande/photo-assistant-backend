@@ -1,7 +1,7 @@
 # Default command when you just type "make"
 .DEFAULT_GOAL := help
 
-PYTHON_VERSION=3.13.0
+PYTHON_VERSION=3.13.12
 VENV_ROOT=./.venv
 PROJECT_NAME=photo-assistant-backend
 
@@ -101,4 +101,7 @@ help:
 	@echo "  docker-logs         View docker logs"
 	@echo "  docker-shell        Shell into api container"
 
-.PHONY: venv deps dev test-local test build run run-local inspector docker-build docker-build-fresh docker-up docker-down docker-restart docker-logs docker-shell help
+help2:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: venv deps dev test-local test build run run-local inspector docker-build docker-build-fresh docker-up docker-down docker-restart docker-logs docker-shell help help2
