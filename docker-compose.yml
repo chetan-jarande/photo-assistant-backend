@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - SURREALDB_USER=root
+      - SURREALDB_PASS=root
+      - SURREALDB_NS=photo_assistant
+      - SURREALDB_DB=main
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    depends_on:
+      - surrealdb
+    volumes:
+      - .:/app
+    # Use reload for development
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    ports:
+      - "8001:8000"
+    command: start --log trace --user root --pass root file://data/database.db
+    volumes:
+      - surreal_data:/surrealdb/data
+
+volumes:
+  surreal_data:
