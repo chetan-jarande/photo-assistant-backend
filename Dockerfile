@@ -1,8 +1,9 @@
-FROM python:3.13.12-slim-bookworm
+FROM python:3.13-slim-bookworm
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies (still needed for compilation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -10,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy application code
 COPY . .
 
-# Install dependencies and the application
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+# Install dependencies using uv
+# Using --system to install directly into the container's python environment
+# Alternatively, could use a venv, but system is simpler for single-app containers
+RUN uv pip install --system --no-cache .
 
 EXPOSE 8000
 

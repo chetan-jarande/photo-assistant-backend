@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     SURREALDB_DB: str = "main"
 
     # AI Provider Settings
-    LLM_API_KEY = SecretStr = Field(
+    LLM_API_KEY: SecretStr = Field(
         ...,
         validation_alias="LLM_API_KEY",
         description="Your LLM API key",
