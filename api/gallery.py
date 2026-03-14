@@ -4,10 +4,12 @@ from typing import List, Optional, Annotated
 import random
 from datetime import datetime
 from enum import Enum
+import os
 
-# Google Drive Dependencies
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
+from fastapi import APIRouter, Query, HTTPException, Depends
+from googleapiclient.errors import HttpError
+from core.config import settings
+from utils.google_drive import GoogleDriveClient, get_drive_client
 
 gallery_router = APIRouter(prefix="/gallery", tags=["Gallery"])
 
@@ -84,7 +86,7 @@ class PaginatedImagesResponse(BaseModel):
 
 
 @gallery_router.get(
-    "/images",
+    "/picsum-photos",
     response_model=PaginatedImagesResponse,
     summary="Get Paginated Images",
     description="Fetch a paginated list of generated/curated gallery images for the UI.",
@@ -224,24 +226,146 @@ class GoogleDriveAsset(BaseModel):
     "/drive-assets",
     response_model=List[GoogleDriveAsset],
     summary="Get Drive Assets",
-    description="Endpoint to return data structured from a Google Drive folder as requested.",
+    description="Endpoint to fetch actual sub-folders and images from the configured Google Drive root folder.",
 )
-async def get_drive_assets():
+async def get_drive_assets(drive_client: GoogleDriveClient = Depends(get_drive_client)):
     """
-    Dummy endpoint to return data structured from Google Drive folder as requested.
+    Dynamically fetches structured data from the Google Drive root folder using Service Account credentials.
     """
-    return [
-        GoogleDriveAsset(
-            _id="13lP1m2LQZYi91B8-6LdqMb1T63aKcRCy",
-            folderId="13lP1m2LQZYi91B8-6LdqMb1T63aKcRCy",
-            folderName="Sky",
-            folderUpdatedAt="2023-09-16T13:53:25.026Z",
-            folderCreatedTime="2023-10-23T17:49:53.328Z",
-            folderMimeType="application/vnd.google-apps.folder",
-            imgId="14Ut2D3TGkP8QxIIqS999JPhgpJN-MJyy",
-            imgThumbnailLink="https://lh3.googleusercontent.com/drive-storage/AKHj6E6Mc3LYr9eij0zK1L2bf8my8cOyHINbsYj0SO74iVvcl6rIyIrKn1uGJA2NXR4rDyi2hEMNW2woBcuocjROwrVryNYssWveHBoYLXy9=s220",
-            imgOriginalLink="https://drive.google.com/uc?export=view&id=14Ut2D3TGkP8QxIIqS999JPhgpJN-MJyy",
-            imgCreatedTime="2023-09-16T13:53:25.026Z",
-            imgMimeType="image/jpeg",
+    # 1. Fetch sub-folders within the root folder
+    folders = drive_client.get_subfolders(settings.DRIVE_ROOT_FOLDER_ID)
+    assets_list = []
+
+    # 2. Iterate over folders and fetch their images
+    for folder in folders:
+        images = drive_client.get_images_in_folder(folder["id"])
+
+        for img in images:
+            # Handle missing links gracefully if Drive didn't generate them
+            thumbnail_link = img.get("thumbnailLink", "")
+            original_link = img.get("webContentLink", f"https://drive.google.com/uc?export=view&id={img['id']}")
+
+            asset = GoogleDriveAsset(
+                _id=f"{folder['id']}_{img['id']}",
+                folderId=folder["id"],
+                folderName=folder.get("name", "Unknown"),
+                folderUpdatedAt=folder.get("modifiedTime", datetime.now()),
+                folderCreatedTime=folder.get("createdTime", datetime.now()),
+                folderMimeType=folder.get("mimeType", MimeTypeEnum.FOLDER),
+                imgId=img["id"],
+                imgThumbnailLink=thumbnail_link,
+                imgOriginalLink=original_link,
+                imgCreatedTime=img.get("createdTime", datetime.now()),
+                imgMimeType=img.get("mimeType", MimeTypeEnum.JPEG),
+            )
+            assets_list.append(asset)
+
+    return assets_list
+
+
+class Section(BaseModel):
+    id: str = Field(..., title="Folder ID", description="The ID of the folder")
+    name: str = Field(..., title="Folder Name", description="The name of the section")
+    coverImage: Optional[GalleryImage] = Field(None, title="Cover Image", description="A representative image for the section cover")
+    updatedAt: datetime = Field(..., title="Updated At", description="Timestamp when the folder was last modified")
+
+
+@gallery_router.get(
+    "/sections",
+    response_model=List[Section],
+    summary="Get Gallery Sections",
+    description="Fetch all category folders from the Google Drive root folder and their cover images.",
+)
+async def get_sections(drive_client: GoogleDriveClient = Depends(get_drive_client)):
+    """
+    Fetches the sub-folders (sections) from the root Google Drive directory.
+    """
+    folders = drive_client.get_subfolders(settings.DRIVE_ROOT_FOLDER_ID)
+    sections = []
+    
+    for folder in folders:
+        # Fetch just 1 image for the cover
+        query = f"'{folder['id']}' in parents and mimeType contains 'image/' and trashed=false"
+        fields = "files(id, name, createdTime, mimeType, thumbnailLink, webContentLink, imageMediaMetadata)"
+        images = drive_client.list_files(query, fields=fields, page_size=1)
+        
+        cover_image = None
+        if images:
+            img = images[0]
+            metadata = img.get("imageMediaMetadata", {})
+            width = int(metadata.get("width", 800))
+            height = int(metadata.get("height", 600))
+            
+            cover_image = GalleryImage(
+                id=img["id"],
+                url=img.get("webContentLink", img.get("thumbnailLink", "")),
+                width=width,
+                height=height,
+                aspectRatio=width / height if height > 0 else 1.33,
+                title=img.get("name", "Untitled"),
+                author="Google Drive",
+                date=img.get("createdTime", datetime.now().isoformat())
+            )
+            
+        sections.append(
+            Section(
+                id=folder["id"],
+                name=folder.get("name", "Unknown"),
+                coverImage=cover_image,
+                updatedAt=folder.get("modifiedTime", datetime.now())
+            )
         )
-    ]
+
+    return sections
+
+
+@gallery_router.get(
+    "/sections/{folder_id}/images",
+    response_model=PaginatedImagesResponse,
+    summary="Get Section Images",
+    description="Fetch a paginated list of images from a specific Google Drive folder.",
+)
+async def get_section_images(
+    folder_id: str,
+    page: Annotated[int, Query(ge=1, description="Page number")] = 1,
+    limit: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 15,
+    drive_client: GoogleDriveClient = Depends(get_drive_client)
+):
+    """
+    Get paginated gallery images from a specific Google Drive folder.
+    """
+    all_images = drive_client.get_images_in_folder(folder_id)
+    
+    # Calculate pagination indices
+    start_index = (page - 1) * limit
+    end_index = start_index + limit
+    
+    if start_index >= len(all_images):
+        return PaginatedImagesResponse(data=[], hasMore=False, nextCursor=None)
+        
+    paginated_images = all_images[start_index:end_index]
+    
+    fetched_data = []
+    for img in paginated_images:
+        metadata = img.get("imageMediaMetadata", {})
+        width = int(metadata.get("width", 800))
+        height = int(metadata.get("height", 600))
+        
+        fetched_data.append(
+            GalleryImage(
+                id=img["id"],
+                url=img.get("webContentLink", img.get("thumbnailLink", "")),
+                width=width,
+                height=height,
+                aspectRatio=width / height if height > 0 else 1.33,
+                title=img.get("name", "Untitled"),
+                author="Google Drive",
+                date=img.get("createdTime", datetime.now().isoformat())
+            )
+        )
+
+    has_more = end_index < len(all_images)
+    next_cursor = page + 1 if has_more else None
+
+    return PaginatedImagesResponse(data=fetched_data, hasMore=has_more, nextCursor=next_cursor)
+

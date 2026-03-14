@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     )
     LLM_MODEL: str = "gemini-2.5-pro"
 
+    # Google Drive Settings
+    DRIVE_CREDENTIALS_PATH: str = "drive-credentials.json"
+    DRIVE_ROOT_FOLDER_ID: str = "16hrXoU5s3IacrZBtr0dYbenWgTdT4oQj"
+
     # Security
     JWT_SECRET_KEY: str = "development_secret_key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days

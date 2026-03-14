@@ -17,6 +17,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     "statsd>=4.0.1",
+    "google-api-python-client>=2.192.0",
 ]
 
 [project.optional-dependencies]

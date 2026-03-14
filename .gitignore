@@ -208,3 +208,6 @@ __marimo__/
 
 # Docs folder
 docs/
+
+# Google Drive Service Account
+drive-credentials.json
