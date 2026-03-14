@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "development_secret_key"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
+    # Others
+    STATSD_HOST: str = "localhost"
+    STATSD_PORT: int = 8125
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
